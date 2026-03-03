@@ -1,0 +1,11 @@
+<div class="container">
+  <h1>Analysis Results</h1>
+  <p><%= link_to "← New Analysis", new_analysis_path %></p>
+
+  <% polling = !@analysis.done? %>
+  <%= turbo_frame_tag "analysis-result",
+      src: analysis_path(@analysis),
+      data: (polling ? { controller: "poll", poll_url_value: analysis_path(@analysis) } : {}) do %>
+    <%= render "result", analysis: @analysis %>
+  <% end %>
+</div>

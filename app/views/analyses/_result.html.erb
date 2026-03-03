@@ -1,0 +1,20 @@
+<% if analysis.pending? || analysis.processing? %>
+  <div class="status-pending">
+    <p>&#9203; <%= analysis.processing? ? "Analyzing your BERA bulletin…" : "Queued for analysis…" %></p>
+    <p>This may take 30–60 seconds while the AI reviews the avalanche data and searches for routes.</p>
+  </div>
+
+<% elsif analysis.complete? %>
+  <div class="status-complete">
+    <p>&#10003; Analysis complete (<%= analysis.turns %> turns)</p>
+  </div>
+  <pre class="result"><%= analysis.result %></pre>
+
+<% elsif analysis.failed? %>
+  <div class="status-failed">
+    <p>&#10007; Analysis failed</p>
+    <% if analysis.error_message.present? %>
+      <pre class="error-detail"><%= analysis.error_message %></pre>
+    <% end %>
+  </div>
+<% end %>

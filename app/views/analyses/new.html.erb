@@ -1,0 +1,23 @@
+<div class="container">
+  <h1>Ski Tour Advisor</h1>
+  <p>Upload a French BERA avalanche bulletin PDF to receive safe ski touring route recommendations.</p>
+
+  <%= form_with model: @analysis, class: "upload-form" do |f| %>
+    <% if @analysis.errors.any? %>
+      <div class="error-messages">
+        <% @analysis.errors.full_messages.each do |msg| %>
+          <p><%= msg %></p>
+        <% end %>
+      </div>
+    <% end %>
+
+    <div class="field">
+      <%= f.label :bera_pdf, "BERA PDF" %>
+      <%= f.file_field :bera_pdf, accept: "application/pdf" %>
+    </div>
+
+    <div class="actions">
+      <%= f.submit "Analyze Routes", class: "btn" %>
+    </div>
+  <% end %>
+</div>

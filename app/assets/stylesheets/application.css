@@ -1,0 +1,106 @@
+/*
+ * This is a manifest file that'll be compiled into application.css.
+ *
+ * With Propshaft, assets are served efficiently without preprocessing steps. You can still include
+ * application-wide styles in this file, but keep in mind that CSS precedence will follow the standard
+ * cascading order, meaning styles declared later in the document or manifest will override earlier ones,
+ * depending on specificity.
+ *
+ * Consider organizing styles into separate files for maintainability.
+ */
+
+body {
+  font-family: system-ui, sans-serif;
+  color: #1a1a1a;
+  background: #f8f8f8;
+  margin: 0;
+}
+
+.container {
+  max-width: 800px;
+  margin: 2rem auto;
+  padding: 0 1.5rem;
+}
+
+h1 { margin-bottom: 0.25rem; }
+
+.upload-form .field {
+  margin: 1.5rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.upload-form label {
+  font-weight: 600;
+}
+
+.upload-form input[type="file"] {
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 0.5rem;
+  background: #fff;
+}
+
+.btn {
+  display: inline-block;
+  padding: 0.6rem 1.4rem;
+  background: #1d4ed8;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.btn:hover { background: #1e40af; }
+
+.error-messages {
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.status-pending {
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 4px;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.status-complete {
+  background: #d1fae5;
+  border: 1px solid #6ee7b7;
+  border-radius: 4px;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.status-failed {
+  background: #fee2e2;
+  border: 1px solid #fca5a5;
+  border-radius: 4px;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+pre.result {
+  white-space: pre-wrap;
+  font-family: inherit;
+  line-height: 1.6;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  padding: 1.5rem;
+  margin: 1rem 0;
+}
+
+pre.error-detail {
+  white-space: pre-wrap;
+  font-family: monospace;
+  font-size: 0.875rem;
+  margin: 0.5rem 0 0;
+}
