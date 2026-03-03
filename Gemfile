@@ -63,5 +63,5 @@ group :test do
   gem "capybara"
   gem "selenium-webdriver"
   gem "webmock"
-  gem "minitest", "~> 5.25"  # Minitest 6.x breaks Rails 8.0.4 test unit integration
+  gem "minitest", "~> 6.0"   # Minitest 6.x breaks Rails 8.0.4 test unit integration
 end
