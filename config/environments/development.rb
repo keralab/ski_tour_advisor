@@ -34,6 +34,9 @@ Rails.application.configure do
   # Print deprecation notices to the Rails logger.
   config.active_support.deprecation = :log
 
+  # Log to STDOUT so logs show up in the console running `bin/dev`.
+  config.logger = ActiveSupport::TaggedLogging.logger(STDOUT)
+
   # Raise an error on page load if there are pending migrations.
   config.active_record.migration_error = :page_load
 

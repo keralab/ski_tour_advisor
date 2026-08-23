@@ -45,7 +45,21 @@ class CamptocampClient
     conn = Faraday.new(BASE_URL) do |f|
       f.response :raise_error
     end
-    response = conn.get(path, params)
-    JSON.parse(response.body)
+
+    Rails.logger.tagged("Camptocamp") do
+      Rails.logger.info("GET #{path} params=#{params.inspect}")
+      started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+      begin
+        response = conn.get(path, params)
+        duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+        Rails.logger.info("GET #{path} -> #{response.status} (#{duration_ms}ms)")
+        JSON.parse(response.body)
+      rescue Faraday::Error => e
+        duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
+        Rails.logger.error("GET #{path} failed after #{duration_ms}ms: #{e.class} #{e.message}")
+        raise
+      end
+    end
   end
 end

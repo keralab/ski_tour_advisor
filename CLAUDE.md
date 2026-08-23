@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Stack
 
 - **Language/Runtime:** Ruby on Rails
-- **AI:** Anthropic Ruby SDK (`anthropic` gem), model `claude-sonnet-4-20250514`
+- **AI:** Anthropic Ruby SDK (`anthropic` gem), model `claude-sonnet-5`
 - **HTTP client:** Faraday (for Camptocamp API)
 - **Background jobs:** Solid Queue (or Sidekiq)
 - **Real-time UI:** Turbo/Hotwire

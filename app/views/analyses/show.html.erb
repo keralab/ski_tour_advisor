@@ -4,8 +4,8 @@
 
   <% polling = !@analysis.done? %>
   <%= turbo_frame_tag "analysis-result",
-      src: analysis_path(@analysis),
-      data: (polling ? { controller: "poll", poll_url_value: analysis_path(@analysis) } : {}) do %>
+      src: (polling ? analysis_path(@analysis) : nil),
+      data: (polling ? { controller: "poll" } : {}) do %>
     <%= render "result", analysis: @analysis %>
   <% end %>
 </div>
