@@ -1,6 +1,33 @@
 <div class="container">
   <h1>Ski Tour Advisor</h1>
-  <p>Upload a French BERA avalanche bulletin PDF to receive safe ski touring route recommendations.</p>
+
+  <% if flash[:alert] %>
+    <div class="error-messages">
+      <p><%= flash[:alert] %></p>
+    </div>
+  <% end %>
+
+  <p>Use the current official BERA bulletin, look up a specific day, or upload your own French BERA avalanche bulletin PDF, to receive safe ski touring route recommendations.</p>
+
+  <%= form_with url: latest_analyses_path, method: :post, class: "latest-form" do %>
+    <div class="actions">
+      <%= submit_tag "Use Current Official BERA", class: "btn" %>
+    </div>
+  <% end %>
+
+  <p>— or —</p>
+
+  <%= form_with url: historical_analyses_path, method: :post, class: "historical-form" do %>
+    <div class="field">
+      <%= label_tag :date, "Date" %>
+      <%= date_field_tag :date, Date.current, max: Date.current %>
+    </div>
+    <div class="actions">
+      <%= submit_tag "Analyze This Date", class: "btn" %>
+    </div>
+  <% end %>
+
+  <p>— or —</p>
 
   <%= form_with model: @analysis, class: "upload-form" do |f| %>
     <% if @analysis.errors.any? %>

@@ -63,6 +63,19 @@ class AgentOrchestrator
       always take precedence over any remote analysis
   PROMPT
 
+  # System prompt as a cacheable block. It never changes between requests, so it's
+  # always worth caching regardless of conversation length.
+  CACHED_SYSTEM = [
+    { type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }
+  ].freeze
+
+  # Tool definitions are static across the app's lifetime; mark the last one so the
+  # whole tools array is cached as a single prefix block.
+  CACHED_TOOLS = (
+    CamptocampTools::TOOLS[0...-1] +
+    [CamptocampTools::TOOLS.last.merge(cache_control: { type: "ephemeral" })]
+  ).freeze
+
   def initialize(anthropic_client: nil, camptocamp_client: nil)
     @anthropic  = anthropic_client  || Anthropic::Client.new(api_key: ANTHROPIC_API_KEY)
     @camptocamp = camptocamp_client || CamptocampClient.new
@@ -92,13 +105,18 @@ class AgentOrchestrator
           resp = @anthropic.messages.create(
             model: MODEL,
             max_tokens: 8096,
-            system: SYSTEM_PROMPT,
-            tools: CamptocampTools::TOOLS,
+            system: CACHED_SYSTEM,
+            tools: CACHED_TOOLS,
             tool_choice: tool_choice,
-            messages: messages
+            messages: with_cache_breakpoint(messages)
           )
           duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
-          Rails.logger.info("turn #{turns}: stop_reason=#{resp.stop_reason} (#{duration_ms}ms)")
+          u = resp.usage
+          Rails.logger.info(
+            "turn #{turns}: stop_reason=#{resp.stop_reason} (#{duration_ms}ms) " \
+            "tokens: in=#{u.input_tokens} out=#{u.output_tokens} " \
+            "cache_write=#{u.cache_creation_input_tokens} cache_read=#{u.cache_read_input_tokens}"
+          )
           resp
         rescue StandardError => e
           duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at) * 1000).round
@@ -130,6 +148,29 @@ class AgentOrchestrator
   end
 
   private
+
+  # Marks the last content block of the last message with a cache breakpoint, after
+  # stripping any breakpoint left over from a previous turn. Since `messages` only
+  # ever grows (each turn appends the previous assistant reply + tool results), the
+  # prefix up to the previous breakpoint is an exact match on every subsequent call
+  # — including the BERA PDF sent in the very first message — so only the newly
+  # appended content has to be processed fresh.
+  def with_cache_breakpoint(messages)
+    msgs = messages.map(&:dup)
+
+    msgs.each do |m|
+      next unless m[:content].is_a?(Array)
+
+      m[:content] = m[:content].map { |b| b.is_a?(Hash) ? b.except(:cache_control) : b }
+    end
+
+    last_content = msgs.last[:content]
+    if last_content.is_a?(Array) && last_content.any?
+      last_content[-1] = last_content[-1].merge(cache_control: { type: "ephemeral" })
+    end
+
+    msgs
+  end
 
   def initial_message(bera_pdf_bytes)
     {

@@ -45,4 +45,25 @@ class AnalysisJobTest < ActiveJob::TestCase
       AnalysisJob.perform_now(-1)
     end
   end
+
+  test "skips the agent orchestrator and completes immediately for an off-season BERA" do
+    @analysis.bera_pdf.attach(
+      io: file_fixture("bera_off_season.pdf").open,
+      filename: "bera_off_season.pdf",
+      content_type: "application/pdf"
+    )
+    @analysis.save!
+
+    orchestrator = Object.new
+    orchestrator.define_singleton_method(:call) { |_| raise "AgentOrchestrator should not be called off-season" }
+
+    AgentOrchestrator.stub(:new, -> { orchestrator }) do
+      AnalysisJob.perform_now(@analysis.id)
+    end
+
+    @analysis.reload
+    assert @analysis.complete?
+    assert_equal BeraSeasonCheck::MESSAGE, @analysis.result
+    assert_equal 0, @analysis.turns
+  end
 end

@@ -6,7 +6,13 @@ class AnalysisJob < ApplicationJob
     analysis.update!(status: :processing)
 
     pdf_bytes = analysis.bera_pdf.download
-    result    = AgentOrchestrator.new.call(pdf_bytes)
+
+    if BeraSeasonCheck.off_season?(pdf_bytes)
+      analysis.update!(status: :complete, result: BeraSeasonCheck::MESSAGE, turns: 0)
+      return
+    end
+
+    result = AgentOrchestrator.new.call(pdf_bytes)
 
     analysis.update!(status: :complete, result: result[:result], turns: result[:turns])
   rescue => e

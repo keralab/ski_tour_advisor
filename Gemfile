@@ -29,6 +29,7 @@ gem "solid_queue"
 
 gem "anthropic"   # Anthropic Ruby SDK for Claude API
 gem "faraday"     # HTTP client for Camptocamp API
+gem "pdf-reader"  # Extract text from BERA PDFs (off-season detection)
 
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false

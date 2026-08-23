@@ -7,7 +7,8 @@ class AgentOrchestratorTest < ActiveSupport::TestCase
 
   FakeTextBlock    = Struct.new(:type, :text)
   FakeToolUseBlock = Struct.new(:type, :id, :name, :input)
-  FakeResponse     = Struct.new(:content, :stop_reason)
+  FakeUsage        = Struct.new(:input_tokens, :output_tokens, :cache_creation_input_tokens, :cache_read_input_tokens)
+  FakeResponse     = Struct.new(:content, :stop_reason, :usage)
 
   # Captures all keyword-arg calls to #create and replays pre-set responses.
   class FakeMessages
@@ -82,13 +83,17 @@ class AgentOrchestratorTest < ActiveSupport::TestCase
     )
   end
 
+  def fake_usage
+    FakeUsage.new(100, 50, 0, 0)
+  end
+
   def end_turn_response(text = "Here are my recommendations.")
-    FakeResponse.new([FakeTextBlock.new("text", text)], "end_turn")
+    FakeResponse.new([FakeTextBlock.new("text", text)], "end_turn", fake_usage)
   end
 
   def tool_use_response(tool_name, tool_id, input)
     block = FakeToolUseBlock.new("tool_use", tool_id, tool_name, input)
-    FakeResponse.new([block], "tool_use")
+    FakeResponse.new([block], "tool_use", fake_usage)
   end
 
   # ---------------------------------------------------------------------------
@@ -111,7 +116,7 @@ class AgentOrchestratorTest < ActiveSupport::TestCase
   # ---------------------------------------------------------------------------
 
   test "executes tool call, passes tool_result back, then returns final text" do
-    input    = { "massif_name" => "vanoise", "elevation_max" => 2500, "orientations" => ["S", "SW"] }
+    input    = { massif_name: "vanoise", elevation_max: 2500, orientations: ["S", "SW"] }
     messages = FakeMessages.new(
       tool_use_response("search_routes", "tu_001", input),
       end_turn_response("Final recommendations.")
@@ -135,7 +140,7 @@ class AgentOrchestratorTest < ActiveSupport::TestCase
   # ---------------------------------------------------------------------------
 
   test "stops after MAX_TURNS even when stop_reason remains tool_use" do
-    looping_response = tool_use_response("get_route_details", "tu_loop", { "route_id" => 42 })
+    looping_response = tool_use_response("get_route_details", "tu_loop", { route_id: 42 })
     responses        = Array.new(AgentOrchestrator::MAX_TURNS, looping_response)
     messages         = FakeMessages.new(*responses)
     orchestrator     = build_orchestrator(messages)
@@ -175,7 +180,7 @@ class AgentOrchestratorTest < ActiveSupport::TestCase
   # ---------------------------------------------------------------------------
 
   test "dispatches search_routes to CamptocampClient#search_routes" do
-    input        = { "massif_name" => "oisans", "elevation_max" => 3000, "orientations" => ["N", "NE"] }
+    input        = { massif_name: "oisans", elevation_max: 3000, orientations: ["N", "NE"] }
     messages     = FakeMessages.new(tool_use_response("search_routes", "tu1", input), end_turn_response)
     orchestrator = build_orchestrator(messages)
 
@@ -190,7 +195,7 @@ class AgentOrchestratorTest < ActiveSupport::TestCase
   end
 
   test "dispatches get_route_details to CamptocampClient#get_route" do
-    messages     = FakeMessages.new(tool_use_response("get_route_details", "tu2", { "route_id" => 123 }), end_turn_response)
+    messages     = FakeMessages.new(tool_use_response("get_route_details", "tu2", { route_id: 123 }), end_turn_response)
     orchestrator = build_orchestrator(messages)
 
     orchestrator.call("pdf")
@@ -199,7 +204,7 @@ class AgentOrchestratorTest < ActiveSupport::TestCase
   end
 
   test "dispatches search_recent_outings to CamptocampClient#search_outings" do
-    input        = { "route_id" => 456 }
+    input        = { route_id: 456 }
     messages     = FakeMessages.new(tool_use_response("search_recent_outings", "tu3", input), end_turn_response)
     orchestrator = build_orchestrator(messages)
 
@@ -212,7 +217,7 @@ class AgentOrchestratorTest < ActiveSupport::TestCase
   end
 
   test "dispatches get_outing_details to CamptocampClient#get_outing" do
-    messages     = FakeMessages.new(tool_use_response("get_outing_details", "tu4", { "outing_id" => 789 }), end_turn_response)
+    messages     = FakeMessages.new(tool_use_response("get_outing_details", "tu4", { outing_id: 789 }), end_turn_response)
     orchestrator = build_orchestrator(messages)
 
     orchestrator.call("pdf")
