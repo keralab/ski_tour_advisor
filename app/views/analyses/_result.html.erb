@@ -8,7 +8,41 @@
   <div class="status-complete">
     <p>&#10003; Analysis complete (<%= analysis.turns %> turns)</p>
   </div>
-  <pre class="result"><%= analysis.result %></pre>
+
+  <% if analysis.conditions.present? %>
+    <section class="conditions">
+      <h2>Conditions</h2>
+      <p><%= simple_format(analysis.conditions) %></p>
+    </section>
+  <% end %>
+
+  <% if analysis.best_skiing.present? %>
+    <section class="best-skiing">
+      <h2>Where to Ski</h2>
+      <p><%= simple_format(analysis.best_skiing) %></p>
+    </section>
+  <% end %>
+
+  <% if analysis.recommended_routes.any? %>
+    <section class="routes">
+      <h2>Top Routes</h2>
+      <ol>
+        <% analysis.recommended_routes.each do |route| %>
+          <li>
+            <h3>
+              <%= link_to route.title, "https://www.camptocamp.org/routes/#{route.camptocamp_route_id}", target: "_blank", rel: "noopener" %>
+            </h3>
+            <p class="route-meta">
+              <% if route.elevation_summit.present? %>Summit <%= route.elevation_summit %> m &middot; <% end %>
+              <% if route.orientations.present? %><%= Array(route.orientations).join(", ") %> &middot; <% end %>
+              <% if route.difficulty.present? %>Difficulty <%= route.difficulty %><% end %>
+            </p>
+            <p><%= route.rationale %></p>
+          </li>
+        <% end %>
+      </ol>
+    </section>
+  <% end %>
 
 <% elsif analysis.failed? %>
   <div class="status-failed">

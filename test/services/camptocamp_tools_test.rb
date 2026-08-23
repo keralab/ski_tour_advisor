@@ -1,12 +1,12 @@
 require "test_helper"
 
 class CamptocampToolsTest < ActiveSupport::TestCase
-  EXPECTED_TOOL_NAMES = %w[search_routes get_route_details search_recent_outings get_outing_details].freeze
+  EXPECTED_TOOL_NAMES = %w[search_routes get_route_details search_recent_outings get_outing_details submit_recommendation].freeze
   MASSIF_ENUM = CamptocampClient::MASSIF_AREA_IDS.keys.freeze
 
-  test "TOOLS is an array of 4 hashes" do
+  test "TOOLS is an array of 5 hashes" do
     assert_instance_of Array, CamptocampTools::TOOLS
-    assert_equal 4, CamptocampTools::TOOLS.length
+    assert_equal 5, CamptocampTools::TOOLS.length
     CamptocampTools::TOOLS.each { |t| assert_instance_of Hash, t }
   end
 
@@ -53,5 +53,15 @@ class CamptocampToolsTest < ActiveSupport::TestCase
   test "get_outing_details requires outing_id" do
     tool = CamptocampTools::TOOLS.find { |t| t[:name] == "get_outing_details" }
     assert_equal ["outing_id"], tool[:input_schema][:required]
+  end
+
+  test "submit_recommendation requires conditions, best_skiing, and routes" do
+    tool = CamptocampTools::TOOLS.find { |t| t[:name] == "submit_recommendation" }
+    assert_equal %w[conditions best_skiing routes], tool[:input_schema][:required]
+  end
+
+  test "submit_recommendation routes items require route_id, title, and rationale" do
+    tool = CamptocampTools::TOOLS.find { |t| t[:name] == "submit_recommendation" }
+    assert_equal %w[route_id title rationale], tool[:input_schema][:properties][:routes][:items][:required]
   end
 end

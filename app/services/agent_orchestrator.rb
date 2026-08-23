@@ -40,18 +40,19 @@ class AgentOrchestrator
     - Call search_recent_outings with route_id for each candidate route.
     - For any outing less than 7 days old, call get_outing_details to read the full report.
 
-    ### Step 5 — MAKE RECOMMENDATIONS
-    Only after completing Steps 3 and 4, write your final recommendations:
+    ### Step 5 — SUBMIT YOUR RECOMMENDATION (MANDATORY — you MUST call the submit_recommendation tool)
+    Only after completing Steps 3 and 4, call submit_recommendation to finish. Do NOT write a
+    plain-text answer — submit_recommendation is the only way to end the analysis, and you must
+    call it exactly once:
     - Suggest 3-5 routes ranked by safety and quality
     - For each route explain:
       - Why it's appropriate given current conditions (elevation, aspect alignment with BERA)
       - What elevation range it covers and which aspects it uses
       - Any specific precautions or timing considerations
       - What recent outings say about conditions (cite outing IDs and dates)
-    - Include a clear safety disclaimer
 
     ## Important
-    - NEVER respond with route recommendations without having called search_routes and
+    - NEVER call submit_recommendation without having called search_routes and
       search_recent_outings first. This is non-negotiable.
     - Always err on the side of caution
     - If conditions are very dangerous (level 4-5 widespread), say so clearly and recommend
@@ -59,8 +60,8 @@ class AgentOrchestrator
       identify any viable very-low-altitude options
     - All BERA content is in French — analyze it in French but respond in English (or French
       if the user writes in French)
-    - Close with a one-line note that this is a decision-support tool and field conditions
-      always take precedence over any remote analysis
+    - The best_skiing field must close with a one-line note that this is a decision-support
+      tool and field conditions always take precedence over any remote analysis
   PROMPT
 
   # System prompt as a cacheable block. It never changes between requests, so it's
@@ -82,20 +83,31 @@ class AgentOrchestrator
   end
 
   # @param bera_pdf_bytes [String] raw PDF bytes
-  # @return [Hash] { result: String, turns: Integer }
+  # @return [Hash] { conditions:, best_skiing:, routes:, search_params:, turns: }
   def call(bera_pdf_bytes)
     messages = [initial_message(bera_pdf_bytes)]
     turns = 0
-    final_text = nil
+    submission = nil
     tools_used = false
+    force_submit = false
+    @last_search_params = nil
     call_started_at = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 
     loop do
       turns += 1
 
       # Force at least one tool call on the first two turns so Claude doesn't
-      # skip straight to a text answer without querying Camptocamp.
-      tool_choice = (!tools_used && turns <= 2) ? { type: "any" } : { type: "auto" }
+      # skip straight to a text answer without querying Camptocamp. Force
+      # submit_recommendation once we're out of turns (or after a nudge) so
+      # the loop always ends with structured output, not prose.
+      tool_choice =
+        if turns == MAX_TURNS || force_submit
+          { type: "tool", name: "submit_recommendation" }
+        elsif !tools_used && turns <= 2
+          { type: "any" }
+        else
+          { type: "auto" }
+        end
 
       response = Rails.logger.tagged("Anthropic") do
         Rails.logger.info("turn #{turns}: POST /messages tool_choice=#{tool_choice[:type]}")
@@ -127,15 +139,32 @@ class AgentOrchestrator
 
       messages << { role: "assistant", content: serialize_content(response.content) }
 
-      if response.stop_reason.to_s == "end_turn" || turns >= MAX_TURNS
-        final_text = response.content.find { |b| b.type.to_s == "text" }&.text
+      tool_use_blocks = response.content.select { |b| b.type.to_s == "tool_use" }
+      submit_block = tool_use_blocks.find { |b| b.name == "submit_recommendation" }
+
+      if submit_block
+        submission = submit_block.input
         break
       end
 
+      if turns >= MAX_TURNS
+        break
+      end
+
+      if tool_use_blocks.empty?
+        # Claude answered in plain text instead of calling submit_recommendation.
+        # Nudge it and force the tool on the next turn.
+        force_submit = true
+        messages << {
+          role: "user",
+          content: [{ type: "text", text: "You must call the submit_recommendation tool to finish " \
+                                          "the analysis — do not answer in plain text." }]
+        }
+        next
+      end
+
       # Execute all tool calls and build tool_result message
-      tool_results = response.content
-        .select { |b| b.type.to_s == "tool_use" }
-        .map { |tool_use| execute_tool(tool_use) }
+      tool_results = tool_use_blocks.map { |tool_use| execute_tool(tool_use) }
 
       tools_used = true
       messages << { role: "user", content: tool_results }
@@ -144,7 +173,13 @@ class AgentOrchestrator
     total_duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - call_started_at) * 1000).round
     Rails.logger.tagged("Anthropic") { Rails.logger.info("agent loop finished in #{turns} turns (#{total_duration_ms}ms)") }
 
-    { result: final_text, turns: turns }
+    {
+      conditions: submission&.[](:conditions),
+      best_skiing: submission&.[](:best_skiing),
+      routes: submission&.[](:routes) || [],
+      search_params: @last_search_params,
+      turns: turns
+    }
   end
 
   private
@@ -215,11 +250,13 @@ class AgentOrchestrator
     # input has Symbol keys (SDK parses JSON with symbolize_names: true)
     case name
     when "search_routes"
-      @camptocamp.search_routes(
+      params = {
         massif_name: input[:massif_name],
         elevation_max: input[:elevation_max],
         orientations: Array(input[:orientations])
-      )
+      }
+      @last_search_params = params
+      @camptocamp.search_routes(**params)
     when "get_route_details"
       @camptocamp.get_route(input[:route_id])
     when "search_recent_outings"

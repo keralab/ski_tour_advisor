@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_03_03_093921) do
+ActiveRecord::Schema[8.0].define(version: 2026_08_23_195844) do
   create_table "active_storage_attachments", force: :cascade do |t|
     t.string "name", null: false
     t.string "record_type", null: false
@@ -41,13 +41,34 @@ ActiveRecord::Schema[8.0].define(version: 2026_03_03_093921) do
 
   create_table "analyses", force: :cascade do |t|
     t.string "status", default: "pending", null: false
-    t.text "result"
     t.text "error_message"
     t.integer "turns"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "massif", default: "mont-blanc", null: false
+    t.datetime "bera_issued_at"
+    t.text "conditions"
+    t.text "best_skiing"
+    t.json "search_params"
+    t.index ["massif", "bera_issued_at"], name: "index_analyses_on_massif_and_bera_issued_at", unique: true, where: "bera_issued_at IS NOT NULL"
+  end
+
+  create_table "recommended_routes", force: :cascade do |t|
+    t.integer "analysis_id", null: false
+    t.integer "rank", null: false
+    t.integer "camptocamp_route_id", null: false
+    t.string "title", null: false
+    t.text "rationale"
+    t.integer "elevation_summit"
+    t.json "orientations"
+    t.string "difficulty"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["analysis_id", "rank"], name: "index_recommended_routes_on_analysis_id_and_rank", unique: true
+    t.index ["analysis_id"], name: "index_recommended_routes_on_analysis_id"
   end
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "recommended_routes", "analyses"
 end

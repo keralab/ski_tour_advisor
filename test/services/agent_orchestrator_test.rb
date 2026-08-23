@@ -87,8 +87,20 @@ class AgentOrchestratorTest < ActiveSupport::TestCase
     FakeUsage.new(100, 50, 0, 0)
   end
 
-  def end_turn_response(text = "Here are my recommendations.")
-    FakeResponse.new([FakeTextBlock.new("text", text)], "end_turn", fake_usage)
+  def submit_input(overrides = {})
+    {
+      conditions: "Danger 3 above 2200m.",
+      best_skiing: "North faces below 2200m are safest.",
+      routes: [
+        { route_id: 111, title: "Route A", rationale: "Safe aspect and elevation.",
+          elevation_summit: 2800, orientations: ["N"], difficulty: "3.1" }
+      ]
+    }.merge(overrides)
+  end
+
+  def submit_response(input = submit_input, id: "tu_submit")
+    block = FakeToolUseBlock.new("tool_use", id, "submit_recommendation", input)
+    FakeResponse.new([block], "tool_use", fake_usage)
   end
 
   def tool_use_response(tool_name, tool_id, input)
@@ -96,38 +108,46 @@ class AgentOrchestratorTest < ActiveSupport::TestCase
     FakeResponse.new([block], "tool_use", fake_usage)
   end
 
+  def text_response(text = "Here are my recommendations.")
+    FakeResponse.new([FakeTextBlock.new("text", text)], "end_turn", fake_usage)
+  end
+
   # ---------------------------------------------------------------------------
-  # 1. Simple end_turn — no tool calls
+  # 1. submit_recommendation on the first turn
   # ---------------------------------------------------------------------------
 
-  test "returns result text and turn count when Claude ends on first turn" do
-    messages     = FakeMessages.new(end_turn_response("Route A is safe."))
+  test "returns structured recommendation and turn count when Claude submits on first turn" do
+    messages     = FakeMessages.new(submit_response)
     orchestrator = build_orchestrator(messages)
 
     result = orchestrator.call("fake pdf bytes")
 
-    assert_equal "Route A is safe.", result[:result]
+    assert_equal "Danger 3 above 2200m.", result[:conditions]
+    assert_equal "North faces below 2200m are safest.", result[:best_skiing]
+    assert_equal 1, result[:routes].length
+    assert_equal 111, result[:routes].first[:route_id]
     assert_equal 1, result[:turns]
     assert_equal 0, @fake_camptocamp.calls.count
   end
 
   # ---------------------------------------------------------------------------
-  # 2. One tool call then end_turn
+  # 2. One tool call then submit_recommendation
   # ---------------------------------------------------------------------------
 
-  test "executes tool call, passes tool_result back, then returns final text" do
+  test "executes tool call, passes tool_result back, then returns the submitted recommendation" do
     input    = { massif_name: "vanoise", elevation_max: 2500, orientations: ["S", "SW"] }
     messages = FakeMessages.new(
       tool_use_response("search_routes", "tu_001", input),
-      end_turn_response("Final recommendations.")
+      submit_response
     )
     orchestrator = build_orchestrator(messages)
 
     result = orchestrator.call("fake pdf bytes")
 
-    assert_equal "Final recommendations.", result[:result]
+    assert_equal "Danger 3 above 2200m.", result[:conditions]
     assert_equal 2, result[:turns]
     assert_equal 1, @fake_camptocamp.calls.count
+    assert_equal({ massif_name: "vanoise", elevation_max: 2500, orientations: ["S", "SW"] }, result[:search_params])
 
     # Verify the second API call included the tool_result in the messages list
     second_call_messages = messages.create_calls.last[:messages]
@@ -136,10 +156,49 @@ class AgentOrchestratorTest < ActiveSupport::TestCase
   end
 
   # ---------------------------------------------------------------------------
-  # 3. MAX_TURNS safety valve
+  # 3. Plain-text answer gets nudged into calling submit_recommendation
   # ---------------------------------------------------------------------------
 
-  test "stops after MAX_TURNS even when stop_reason remains tool_use" do
+  test "nudges Claude to call submit_recommendation when it answers in plain text" do
+    messages = FakeMessages.new(
+      text_response("Here's my analysis in prose."),
+      submit_response
+    )
+    orchestrator = build_orchestrator(messages)
+
+    result = orchestrator.call("fake pdf bytes")
+
+    assert_equal "Danger 3 above 2200m.", result[:conditions]
+    assert_equal 2, result[:turns]
+
+    # The nudge turn forces tool_choice to submit_recommendation
+    forced_tool_choice = messages.create_calls.last[:tool_choice]
+    assert_equal({ type: "tool", name: "submit_recommendation" }, forced_tool_choice)
+
+    # And the nudge message was appended for Claude to see
+    second_call_messages = messages.create_calls.last[:messages]
+    assert_includes second_call_messages.last[:content].first[:text], "submit_recommendation"
+  end
+
+  # ---------------------------------------------------------------------------
+  # 4. MAX_TURNS forces submit_recommendation
+  # ---------------------------------------------------------------------------
+
+  test "forces submit_recommendation on the final turn so the loop always ends with structured output" do
+    looping_response = tool_use_response("get_route_details", "tu_loop", { route_id: 42 })
+    responses = Array.new(AgentOrchestrator::MAX_TURNS - 1, looping_response) + [submit_response]
+    messages     = FakeMessages.new(*responses)
+    orchestrator = build_orchestrator(messages)
+
+    result = orchestrator.call("fake pdf bytes")
+
+    assert_equal AgentOrchestrator::MAX_TURNS, result[:turns]
+    assert_equal AgentOrchestrator::MAX_TURNS, messages.create_calls.count
+    assert_equal({ type: "tool", name: "submit_recommendation" }, messages.create_calls.last[:tool_choice])
+    assert_equal "Danger 3 above 2200m.", result[:conditions]
+  end
+
+  test "stops after MAX_TURNS even if Claude keeps calling other tools instead of submitting" do
     looping_response = tool_use_response("get_route_details", "tu_loop", { route_id: 42 })
     responses        = Array.new(AgentOrchestrator::MAX_TURNS, looping_response)
     messages         = FakeMessages.new(*responses)
@@ -149,16 +208,18 @@ class AgentOrchestratorTest < ActiveSupport::TestCase
 
     assert_equal AgentOrchestrator::MAX_TURNS, result[:turns]
     assert_equal AgentOrchestrator::MAX_TURNS, messages.create_calls.count
+    assert_nil result[:conditions]
+    assert_equal [], result[:routes]
   end
 
   # ---------------------------------------------------------------------------
-  # 4. Tool errors returned as is_error tool_result (not raised)
+  # 5. Tool errors returned as is_error tool_result (not raised)
   # ---------------------------------------------------------------------------
 
   test "catches tool dispatch errors and sends is_error tool_result to Claude" do
     messages     = FakeMessages.new(
       tool_use_response("nonexistent_tool", "tu_bad", {}),
-      end_turn_response("I see there was an error.")
+      submit_response
     )
     orchestrator = build_orchestrator(messages)
 
@@ -176,12 +237,12 @@ class AgentOrchestratorTest < ActiveSupport::TestCase
   end
 
   # ---------------------------------------------------------------------------
-  # 5. Dispatch — each tool name routes to the correct CamptocampClient method
+  # 6. Dispatch — each tool name routes to the correct CamptocampClient method
   # ---------------------------------------------------------------------------
 
   test "dispatches search_routes to CamptocampClient#search_routes" do
     input        = { massif_name: "oisans", elevation_max: 3000, orientations: ["N", "NE"] }
-    messages     = FakeMessages.new(tool_use_response("search_routes", "tu1", input), end_turn_response)
+    messages     = FakeMessages.new(tool_use_response("search_routes", "tu1", input), submit_response)
     orchestrator = build_orchestrator(messages)
 
     orchestrator.call("pdf")
@@ -195,7 +256,7 @@ class AgentOrchestratorTest < ActiveSupport::TestCase
   end
 
   test "dispatches get_route_details to CamptocampClient#get_route" do
-    messages     = FakeMessages.new(tool_use_response("get_route_details", "tu2", { route_id: 123 }), end_turn_response)
+    messages     = FakeMessages.new(tool_use_response("get_route_details", "tu2", { route_id: 123 }), submit_response)
     orchestrator = build_orchestrator(messages)
 
     orchestrator.call("pdf")
@@ -205,7 +266,7 @@ class AgentOrchestratorTest < ActiveSupport::TestCase
 
   test "dispatches search_recent_outings to CamptocampClient#search_outings" do
     input        = { route_id: 456 }
-    messages     = FakeMessages.new(tool_use_response("search_recent_outings", "tu3", input), end_turn_response)
+    messages     = FakeMessages.new(tool_use_response("search_recent_outings", "tu3", input), submit_response)
     orchestrator = build_orchestrator(messages)
 
     orchestrator.call("pdf")
@@ -217,7 +278,7 @@ class AgentOrchestratorTest < ActiveSupport::TestCase
   end
 
   test "dispatches get_outing_details to CamptocampClient#get_outing" do
-    messages     = FakeMessages.new(tool_use_response("get_outing_details", "tu4", { outing_id: 789 }), end_turn_response)
+    messages     = FakeMessages.new(tool_use_response("get_outing_details", "tu4", { outing_id: 789 }), submit_response)
     orchestrator = build_orchestrator(messages)
 
     orchestrator.call("pdf")

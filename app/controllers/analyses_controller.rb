@@ -8,9 +8,20 @@ class AnalysesController < ApplicationController
   end
 
   def create
-    @analysis = Analysis.new(analysis_params)
-    if @analysis.save
-      AnalysisJob.perform_later(@analysis.id)
+    uploaded = params.dig(:analysis, :bera_pdf)
+
+    if uploaded.blank?
+      @analysis = Analysis.new
+      @analysis.errors.add(:bera_pdf, "must be attached")
+      render :new, status: :unprocessable_entity
+      return
+    end
+
+    @analysis = Analysis.find_or_create_from_pdf(
+      uploaded.read, filename: uploaded.original_filename, content_type: uploaded.content_type
+    )
+
+    if @analysis.persisted?
       redirect_to @analysis
     else
       render :new, status: :unprocessable_entity
@@ -42,22 +53,12 @@ class AnalysesController < ApplicationController
       return
     end
 
-    @analysis = Analysis.new
-    @analysis.bera_pdf.attach(
-      io: StringIO.new(fetched.pdf_bytes),
-      filename: fetched.filename,
-      content_type: "application/pdf"
-    )
+    @analysis = Analysis.find_or_create_from_pdf(fetched.pdf_bytes, filename: fetched.filename)
 
-    if @analysis.save
-      AnalysisJob.perform_later(@analysis.id)
+    if @analysis.persisted?
       redirect_to @analysis
     else
       redirect_to new_analysis_path, alert: @analysis.errors.full_messages.to_sentence
     end
-  end
-
-  def analysis_params
-    params.require(:analysis).permit(:bera_pdf)
   end
 end

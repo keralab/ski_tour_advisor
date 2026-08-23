@@ -25,6 +25,33 @@ class AnalysesControllerTest < ActionDispatch::IntegrationTest
     assert_equal "BRA_MONT-BLANC.pdf", analysis.bera_pdf.filename.to_s
   end
 
+  test "latest reuses the existing analysis and does not enqueue a new job for an already-seen bulletin" do
+    fetched = BeraFetcher::Result.new(
+      pdf_bytes: "%PDF-1.4 fake", filename: "BRA_MONT-BLANC.pdf", released_on: nil
+    )
+    fetcher = Object.new
+    fetcher.define_singleton_method(:call_current) { fetched }
+    issued_at = ActiveSupport::TimeZone["Europe/Paris"].local(2026, 1, 14, 16, 0)
+
+    BeraFetcher.stub(:new, -> { fetcher }) do
+      BeraMetadataExtractor.stub(:issued_at, issued_at) do
+        post latest_analyses_path
+      end
+    end
+    first_analysis_id = Analysis.order(:created_at).last.id
+
+    assert_no_enqueued_jobs do
+      BeraFetcher.stub(:new, -> { fetcher }) do
+        BeraMetadataExtractor.stub(:issued_at, issued_at) do
+          post latest_analyses_path
+        end
+      end
+    end
+
+    assert_equal 1, Analysis.count
+    assert_redirected_to analysis_path(first_analysis_id)
+  end
+
   test "latest redirects with an alert when no BERA is currently available" do
     fetcher = Object.new
     fetcher.define_singleton_method(:call_current) { nil }
